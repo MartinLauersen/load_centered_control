@@ -2,3 +2,5 @@
 .vscode
 /log
 .pyc
+*.pyc
+*/__pycache__/*

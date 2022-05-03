@@ -1,9 +1,11 @@
+from cmath import nan
 import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 
 from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Vector3Stamped
 
 from px4_msgs.msg import OffboardControlMode
 from px4_msgs.msg import TrajectorySetpoint
@@ -27,11 +29,14 @@ class LoadCenteredControl(Node):
         self.load_vel_ = np.empty(3)
 
         # Initialize controllers
-        self.vx_adrc = ADRC(1)
-        self.vy_adrc = ADRC()
-        self.vz_adrc = ADRC()
+        self.vx_adrc = ADRC(2, 1., -4/2, 3, 1/timer_period)
+        self.vy_adrc = ADRC(2, 1., -4/2, 3, 1/timer_period)
+        self.vz_adrc = ADRC(2, 2., -4/4, 10, 1/timer_period, saturation=(-3.,3.))
 
-        
+        self.sp_x = (0.5 - np.random.random_sample())*50
+        self.sp_y = (0.5 - np.random.random_sample())*50
+        self.sp_z = -(np.random.random_sample())*25 - 2.5
+        print("Going to:", self.sp_x, self.sp_y, self.sp_z)
 
 
         # Subscribers
@@ -48,10 +53,12 @@ class LoadCenteredControl(Node):
             TrajectorySetpoint, "fmu/trajectory_setpoint/in", 10)
         self.vehicle_command_publisher_ = self.create_publisher(
             VehicleCommand, "fmu/vehicle_command/in", 10)
+        self.state_publisher_ = self.create_publisher(
+            Vector3Stamped, "adrc/vz/states", 10)
         
         # Timers
-        #self.timer_ = self.create_timer(
-        #    timer_period, self.timer_callback)
+        self.timer_ = self.create_timer(
+            timer_period, self.timer_callback)
 
     # @brief Execute based on timer. MAIN LOOP.
     def timer_callback(self):
@@ -60,11 +67,26 @@ class LoadCenteredControl(Node):
             self.publish_vehicle_command(
                 VehicleCommand.VEHICLE_CMD_DO_SET_MODE, float(1), float(6))
             self.arm()
+            self.vz_adrc.estimate(self.load_vel_[2])
+            self.vz_adrc.estimate(self.load_vel_[2])
+            self.vz_adrc.estimate(self.load_vel_[2])
+            self.vz_adrc.estimate(self.load_vel_[2])
+            self.vz_adrc.estimate(self.load_vel_[2])
+            self.vz_adrc.estimate(self.load_vel_[2])
+            self.vz_adrc.estimate(self.load_vel_[2])
+        else:
+            self.vz_adrc.estimate(self.load_vel_[2])
+            self.vz_adrc.control(-0.5)
+
+        #self.vz_adrc.estimate(self.load_vel_[2])
+        #self.vz_adrc.control(-1.)
+        print("gt:",self.load_vel_[2],"\t est:",self.vz_adrc.z[0,0],"\t u:",self.vz_adrc.u[0,0])              
         # offboard_control_mode needs to be paired with trajectory_setpoint
         self.publish_offboard_control_mode()
-        self.publish_trajectory_setpoint()
+        self.publish_trajectory_setpoint(vz=self.vz_adrc.u[0,0])
         if (self.offboard_setpoint_counter_ < 11):
             self.offboard_setpoint_counter_ += 1
+        self.publish_state()
 
     # @brief Store load position and velocity
     def load_pos_sub_callback(self, msg):
@@ -73,7 +95,7 @@ class LoadCenteredControl(Node):
         self.load_pos_[2] = msg.pose.pose.position.z
         self.load_vel_[0] = msg.twist.twist.linear.x
         self.load_vel_[1] = msg.twist.twist.linear.y
-        self.load_vel_[2] = msg.twist.twist.linear.z
+        self.load_vel_[2] = -msg.twist.twist.linear.z
 
     # @brief Store timestamp from PX4
     def timesync_callback(self, msg):
@@ -84,7 +106,7 @@ class LoadCenteredControl(Node):
     def arm(self):
         self.publish_vehicle_command(
             VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0)
-        self.get_logger().info("Arm command send")
+        #self.get_logger().info("Arm command send")
 
     # @brief  Send a command to Disarm the vehicle
     def disarm(self):
@@ -104,13 +126,17 @@ class LoadCenteredControl(Node):
         self.offboard_control_mode_publisher_.publish(msg)
 
     # @ brief Publish a trajectory setpoint
-    def publish_trajectory_setpoint(self):
+    def publish_trajectory_setpoint(self, x: float = nan, y: float = nan, z: float = nan, vx: float = nan, vy: float = nan, vz: float = nan):
         msg = TrajectorySetpoint()
         msg.timestamp = self.timestamp_
-        msg.x = -30.0
-        msg.y = -10.0
-        msg.z = -5.0
-        msg.yaw = -3.14  # [-PI:PI]
+        msg.x = np.NaN
+        msg.y = np.NaN
+        msg.z = np.NaN
+        msg.vx = vx
+        msg.vy = vy
+        msg.vz = vz
+        #msg.yaw = -3.14  # [-PI:PI]
+        #msg.vz = nan#float(vz)
         self.trajectory_setpoint_publisher_.publish(msg)
 
     #  @ brief Publish vehicle commands
@@ -129,6 +155,14 @@ class LoadCenteredControl(Node):
         msg.source_component = 1
         msg.from_external = True
         self.vehicle_command_publisher_.publish(msg)
+
+    def publish_state(self):
+        msg = Vector3Stamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.vector.x = self.vz_adrc.z[0,0]
+        msg.vector.y = self.vz_adrc.z[1,0]
+        msg.vector.z = self.vz_adrc.z[2,0]
+        self.state_publisher_.publish(msg)
 
 def main(args=None):
     rclpy.init(args=args)

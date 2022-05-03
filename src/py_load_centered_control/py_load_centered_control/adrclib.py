@@ -1,3 +1,4 @@
+from ast import IsNot
 import numpy as np
 
 class ADRC():
@@ -8,7 +9,7 @@ class ADRC():
                  k_eso: float, 
                  hz: float, 
                  init_state: tuple = False,
-                 saturation: tuple = False):
+                 saturation: tuple = (False,False)):
 
         self.b = b0
         self.A = np.eye(order+1, k=1)
@@ -17,7 +18,8 @@ class ADRC():
         self.C = np.zeros((1,order+1))
         self.C[0,0] = 1
 
-        self.saturation = saturation
+
+        self.saturation = np.array(saturation,np.float64)
 
         self.u = 0.0
         if not(init_state):
@@ -58,8 +60,9 @@ class ADRC():
         error[0] = ref + error[0]
         
         self.u = self.gains @ error / self.b
-        if self.saturation:
-            self.u = self.saturate()
+        if any(self.saturation):
+            self.saturate()
+
 
     def saturate(self):
         self.u = np.clip(self.u,self.saturation[0],self.saturation[1])
