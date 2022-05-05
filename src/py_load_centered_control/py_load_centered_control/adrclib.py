@@ -33,8 +33,12 @@ class ADRC():
             self.Ad = self.Ad + (np.linalg.matrix_power(self.A,i)*hz**-i)/np.math.factorial(i)
             self.Bd = self.Bd + (np.linalg.matrix_power(self.A,i-1)*hz**-i)/np.math.factorial(i)
         self.Bd = self.Bd@self.B
+        
+        print("Ad:", self.Ad)
+        print("Bd:", self.Bd)
 
         z_eso = np.exp(s_cl*k_eso*1/hz)
+        print("z_eso:", z_eso)
         if order == 1:
             self.L = np.array([[1-z_eso**2], 
                                 [hz*(1-z_eso)**2]])
@@ -43,11 +47,13 @@ class ADRC():
                                 [(3*hz/2)*(1-z_eso)**2*(1+z_eso)],
                                 [hz**2*(1-z_eso)**3]])
         # TODO: Calculate L for arbitrary order
+        print("L:", self.L)
 
         # Calculate gains for arbitrary order, gives [Kp Kd ... 1]
         # NOTE: Having 1 at end is utilized to simplify calculation in control function
         # as this is essentially the "gain" for the estimated disturbance
         self.gains = np.flip([np.poly(s_cl*np.ones(order))])
+        print("K:", self.gains)
 
 
     def estimate(self, measurement):

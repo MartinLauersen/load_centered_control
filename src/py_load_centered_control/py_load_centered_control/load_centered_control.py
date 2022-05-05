@@ -22,16 +22,17 @@ class LoadCenteredControl(Node):
         super().__init__('load_centered_control')
 
         # Variables
-        timer_period = 0.01  # seconds
+        self.timer_period = 1/300  # seconds
         self.timestamp_ = 0
         self.offboard_setpoint_counter_ = 0 # counter for the number of setpoints sent
         self.load_pos_ = np.empty(3)
         self.load_vel_ = np.empty(3)
+        self.adrc_warmup_counter = 0
 
         # Initialize controllers
-        self.vx_adrc = ADRC(2, 1., -4/2, 3, 1/timer_period)
-        self.vy_adrc = ADRC(2, 1., -4/2, 3, 1/timer_period)
-        self.vz_adrc = ADRC(2, 2., -4/4, 10, 1/timer_period, saturation=(-3.,3.))
+        #self.vx_adrc = ADRC(2, 1., -4/2, 3, 1/timer_period)
+        #self.vy_adrc = ADRC(2, 1., -4/2, 3, 1/timer_period)
+        self.vz_adrc = ADRC(2, 20., -4/2, 5, 1/self.timer_period, saturation=(-3.,3.))
 
         self.sp_x = (0.5 - np.random.random_sample())*50
         self.sp_y = (0.5 - np.random.random_sample())*50
@@ -58,29 +59,28 @@ class LoadCenteredControl(Node):
         
         # Timers
         self.timer_ = self.create_timer(
-            timer_period, self.timer_callback)
+            self.timer_period, self.timer_callback)
 
     # @brief Execute based on timer. MAIN LOOP.
     def timer_callback(self):
+
+        self.vz_adrc.estimate(self.load_vel_[2])
+
         if (self.offboard_setpoint_counter_ == 10):
             # Change to Offboard mode after 10 setpoints
             self.publish_vehicle_command(
                 VehicleCommand.VEHICLE_CMD_DO_SET_MODE, float(1), float(6))
             self.arm()
-            self.vz_adrc.estimate(self.load_vel_[2])
-            self.vz_adrc.estimate(self.load_vel_[2])
-            self.vz_adrc.estimate(self.load_vel_[2])
-            self.vz_adrc.estimate(self.load_vel_[2])
-            self.vz_adrc.estimate(self.load_vel_[2])
-            self.vz_adrc.estimate(self.load_vel_[2])
-            self.vz_adrc.estimate(self.load_vel_[2])
+        
+        # Allow estimator to warm up
+        warmup_time = 1.0 # seconds
+        if self.adrc_warmup_counter < warmup_time*1/self.timer_period:
+            self.vz_adrc.u = np.array([[0.0]])
+            self.adrc_warmup_counter += 1
         else:
-            self.vz_adrc.estimate(self.load_vel_[2])
             self.vz_adrc.control(-0.5)
 
-        #self.vz_adrc.estimate(self.load_vel_[2])
-        #self.vz_adrc.control(-1.)
-        print("gt:",self.load_vel_[2],"\t est:",self.vz_adrc.z[0,0],"\t u:",self.vz_adrc.u[0,0])              
+        #print("gt:",self.load_vel_[2],"\t est:",self.vz_adrc.z[0,0],"\t u:",self.vz_adrc.u[0,0])              
         # offboard_control_mode needs to be paired with trajectory_setpoint
         self.publish_offboard_control_mode()
         self.publish_trajectory_setpoint(vz=self.vz_adrc.u[0,0])
@@ -132,8 +132,8 @@ class LoadCenteredControl(Node):
         msg.x = np.NaN
         msg.y = np.NaN
         msg.z = np.NaN
-        msg.vx = vx
-        msg.vy = vy
+        msg.vx = np.NaN
+        msg.vy = np.NaN
         msg.vz = vz
         #msg.yaw = -3.14  # [-PI:PI]
         #msg.vz = nan#float(vz)
